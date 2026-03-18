@@ -3,14 +3,16 @@
 __pycache__/
 *.pyc
 
-
-# Env / secrets
+# Environment Files
 .env
-
 
 # Node (frontend)
 node_modules/
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
 # Build files
 dist/
