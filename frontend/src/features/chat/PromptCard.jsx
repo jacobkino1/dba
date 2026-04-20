@@ -1,9 +1,12 @@
 import { useState } from "react";
 
-
-export default function PromptCard({ title, subtitle, onClick }) {
+export default function PromptCard({
+  title,
+  subtitle,
+  promptText,
+  onClick,
+}) {
   const [isHovered, setIsHovered] = useState(false);
-
 
   return (
     <div
@@ -11,12 +14,11 @@ export default function PromptCard({ title, subtitle, onClick }) {
         ...styles.card,
         ...(isHovered ? styles.cardHover : {}),
       }}
-      onClick={() => onClick(title)}
+      onClick={() => onClick(promptText || title)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <div style={styles.icon}>🦷</div>
-
 
       <div style={styles.content}>
         <div style={styles.title}>{title}</div>
@@ -26,11 +28,10 @@ export default function PromptCard({ title, subtitle, onClick }) {
   );
 }
 
-
 const styles = {
   card: {
-    background: "rgba(15, 23, 42, 0.92)",
-    border: "1px solid rgba(59,130,246,0.14)",
+    background: "var(--surface-1)",
+    border: "1px solid var(--icon-bubble-border)",
     borderRadius: "16px",
     minHeight: "104px",
     padding: "20px 20px",
@@ -39,12 +40,13 @@ const styles = {
     gap: "12px",
     alignItems: "flex-start",
     boxSizing: "border-box",
-    transition: "transform 0.18s ease, box-shadow 0.18s ease, border 0.18s ease",
+    transition:
+      "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease",
   },
   cardHover: {
     transform: "translateY(-2px)",
-    border: "1px solid rgba(59,130,246,0.3)",
-    boxShadow: "0 0 18px rgba(59,130,246,0.18)",
+    border: "1px solid var(--table-action-hover-border)",
+    boxShadow: "var(--shadow-soft)",
   },
   icon: {
     fontSize: "18px",
@@ -57,12 +59,12 @@ const styles = {
   title: {
     fontWeight: "600",
     fontSize: "15px",
-    color: "#f8fafc",
+    color: "var(--text-primary)",
     lineHeight: 1.35,
   },
   subtitle: {
     fontSize: "13px",
-    color: "#94a3b8",
+    color: "var(--text-muted)",
     marginTop: "6px",
     lineHeight: 1.4,
   },

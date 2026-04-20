@@ -1,24 +1,38 @@
 import { useEffect, useRef, useState } from "react";
+import { ASK_URL, buildJsonHeaders } from "../../config/api";
 
-
-export default function ChatComposer({ prompt, setMessages }) {
+export default function ChatComposer({
+  prompt,
+  setPrompt,
+  setMessages,
+  selectedClinicName,
+  activeConversationId,
+  onCreateConversation,
+  onPersistConversationMessage,
+}) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef(null);
+  const typingIntervalRef = useRef(null);
 
+  const canPersistHistory =
+    typeof onCreateConversation === "function" &&
+    typeof onPersistConversationMessage === "function";
 
   useEffect(() => {
     if (prompt) {
       setInput(prompt);
       inputRef.current?.focus();
-    }
-  }, [prompt]);
 
+      if (typeof setPrompt === "function") {
+        setPrompt("");
+      }
+    }
+  }, [prompt, setPrompt]);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-
 
   useEffect(() => {
     if (!isLoading) {
@@ -28,19 +42,24 @@ export default function ChatComposer({ prompt, setMessages }) {
     }
   }, [isLoading]);
 
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleAsk() {
     if (!input.trim() || isLoading) return;
 
-
     const question = input.trim();
-
 
     const userMessage = {
       role: "user",
       content: question,
     };
-
 
     setMessages((prev) => [
       ...prev,
@@ -52,66 +71,99 @@ export default function ChatComposer({ prompt, setMessages }) {
       },
     ]);
 
-
     setInput("");
     setIsLoading(true);
 
+    let conversationId = canPersistHistory ? activeConversationId || "" : "";
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/ask", {
+      if (canPersistHistory && !conversationId) {
+        const createdConversation = await onCreateConversation(question);
+        conversationId = createdConversation?.conversationId || "";
+      }
+
+      if (canPersistHistory && !conversationId) {
+        throw new Error("Conversation could not be created");
+      }
+
+      if (canPersistHistory) {
+        await onPersistConversationMessage(conversationId, "user", question, null);
+      }
+
+      const headers = buildJsonHeaders();
+
+      const response = await fetch(ASK_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
-          organisationId: "aa0938dd-55ff-4169-8aa2-6d59e9e0a5c4",
-          clinicId: "52e46361-3012-491c-a2ab-c2b898352975",
-          roleAccess: "staff",
-          question: question,
+          question,
           topK: 5,
+          conversationId: canPersistHistory ? conversationId : null,
         }),
       });
 
+      let data = null;
 
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
       }
 
+      if (!response.ok) {
+        throw new Error(
+          data?.detail ||
+            data?.message ||
+            `Request failed with status ${response.status}`
+        );
+      }
 
-      const data = await response.json();
-      const answer = data.answer || "No answer returned from backend.";
+      const answer = data?.answer || "No answer returned from backend.";
+      const sourceJson = JSON.stringify(data?.sources || []);
 
+      if (canPersistHistory) {
+        await onPersistConversationMessage(
+          conversationId,
+          "assistant",
+          answer,
+          sourceJson
+        );
+      }
 
       setMessages((prev) => {
         const withoutTyping = prev.filter((msg) => !msg.isTyping);
         return [...withoutTyping, { role: "assistant", content: "" }];
       });
 
-
       const words = answer.split(" ");
       let index = 0;
 
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+      }
 
-      const interval = setInterval(() => {
-        index++;
-
+      typingIntervalRef.current = setInterval(() => {
+        index += 1;
 
         setMessages((prev) => {
+          if (!Array.isArray(prev) || prev.length === 0) return prev;
+
           const updated = [...prev];
           const last = updated[updated.length - 1];
 
-
           if (last && last.role === "assistant") {
-            last.content = words.slice(0, index).join(" ");
+            updated[updated.length - 1] = {
+              ...last,
+              content: words.slice(0, index).join(" "),
+            };
           }
-
 
           return updated;
         });
 
-
         if (index >= words.length) {
-          clearInterval(interval);
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
         }
       }, 40);
     } catch (error) {
@@ -119,7 +171,6 @@ export default function ChatComposer({ prompt, setMessages }) {
         role: "assistant",
         content: `Error talking to backend: ${error.message}`,
       };
-
 
       setMessages((prev) => {
         const withoutTyping = prev.filter((msg) => !msg.isTyping);
@@ -130,7 +181,6 @@ export default function ChatComposer({ prompt, setMessages }) {
     }
   }
 
-
   function handleKeyDown(e) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -138,13 +188,17 @@ export default function ChatComposer({ prompt, setMessages }) {
     }
   }
 
-
   return (
     <div style={styles.wrapper}>
       <div style={styles.inner}>
+        <div style={styles.contextLabel}>
+          {selectedClinicName
+            ? `Answers are based on ${selectedClinicName} and shared documents`
+            : "Answers are based on the selected clinic and shared documents"}
+        </div>
+
         <div style={styles.container}>
           <span style={styles.icon}>🦷</span>
-
 
           <input
             ref={inputRef}
@@ -156,7 +210,6 @@ export default function ChatComposer({ prompt, setMessages }) {
             placeholder="Ask anything to help with patient care, procedures, or admin tasks..."
             disabled={isLoading}
           />
-
 
           <button
             type="button"
@@ -175,7 +228,6 @@ export default function ChatComposer({ prompt, setMessages }) {
   );
 }
 
-
 const styles = {
   wrapper: {
     width: "100%",
@@ -186,36 +238,48 @@ const styles = {
     width: "100%",
     maxWidth: "980px",
   },
+  contextLabel: {
+    color: "var(--text-muted)",
+    fontSize: "12px",
+    marginBottom: "10px",
+    paddingLeft: "4px",
+  },
   container: {
     width: "100%",
-    background: "#0f172a",
-    border: "1px solid #1f2937",
+    background: "var(--surface-1)",
+    border: "1px solid var(--border-strong)",
     borderRadius: "16px",
     padding: "12px 14px",
     display: "flex",
     alignItems: "center",
     gap: "12px",
     boxSizing: "border-box",
+    transition:
+      "background 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
+    boxShadow: "var(--shadow-soft)",
   },
   icon: {
     fontSize: "18px",
+    lineHeight: 1,
   },
   input: {
     flex: 1,
     background: "transparent",
     border: "none",
     outline: "none",
-    color: "white",
+    color: "var(--text-primary)",
     fontSize: "15px",
   },
   button: {
-    background: "#2563eb",
+    background: "var(--accent-solid)",
     border: "none",
     padding: "8px 16px",
     borderRadius: "10px",
-    color: "white",
+    color: "#ffffff",
     fontWeight: "600",
     cursor: "pointer",
+    boxShadow: "var(--accent-shadow)",
+    transition: "opacity 160ms ease, transform 160ms ease",
   },
   buttonDisabled: {
     opacity: 0.7,
